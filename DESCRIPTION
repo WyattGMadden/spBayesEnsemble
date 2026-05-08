@@ -1,0 +1,16 @@
+Package: spBayesEnsemble
+Title: Efficient Spatial Bayesian Ensembles
+Version: 0.0.0.9000
+Authors@R: 
+    person("Wyatt", "Madden", , "wyattgmadden@gmail.com", role = c("aut", "cre"))
+Description: Fitting of efficient spatial Bayesian ensembles.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Imports: 
+    BayesLogit,
+    mvtnorm
+Depends: 
+    R (>= 3.5)
+LazyData: true

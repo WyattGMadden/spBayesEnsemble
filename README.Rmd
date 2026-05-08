@@ -1,0 +1,89 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+```
+
+# spSpatialBayes
+
+<!-- badges: start -->
+[![R-CMD-check](https://github.com/WyattGMadden/spSpatialBayes/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/WyattGMadden/spSpatialBayes/actions/workflows/R-CMD-check.yaml)
+<!-- badges: end -->
+
+
+
+## Installation
+
+You can install the development version of **spSpatialBayes** like so:
+
+```{r, eval = F}
+remotes::install_github("WyattGMadden/spSpatialBayes")
+```
+
+```{r, eval = F}
+la_aqs
+```
+
+```{r, eval = F}
+X_elev <- unique(la_aqs[, c("space_id", "elevation")])
+X_elev <- X_elev[order(X_elev$space_id), ]
+
+pg_fit <- pg_ensemble(
+    dens = la_aqs[, c("cmaqgrm_model_density", 
+                      "modisgrm_model_density",
+                      "bart_model_density")],
+    X = cbind(rep(1, nrow(X_elev)),
+              X_elev$elevation),
+    space_id = la_aqs$space_id,
+    coords = la_aqs[, c("x", "y")],
+    n_iter = 1000
+)
+            
+```
+
+
+```{r, eval = F}
+X_elev_pred <- unique(la_grid[, c("space_id", "elevation", "x", "y")])
+X_elev_pred <- X_elev_pred[order(X_elev_pred$space_id), ]
+pred <- pg_pred(
+    pg_fit = pg_fit,
+    X = cbind(rep(1, nrow(X_elev_pred)),
+              X_elev_pred$elevation),
+    space_id = la_grid$space_id,
+    coords = la_grid[, c("x", "y")]
+)
+
+
+library(tidyverse)
+pred |>
+    ggplot(aes(x = x, y = y, color = cmaqgrm_model_density)) +
+    geom_tile(size = 5)
+
+pred |>
+    ggplot(aes(x = x, y = y, color = modisgrm_model_density)) +
+    geom_tile(size = 5)
+
+pred |>
+    ggplot(aes(x = x, y = y, color = bart_model_density)) +
+    geom_tile(size = 5)
+
+X_elev_pred |>
+    ggplot(aes(x = x, y = y, color = elevation)) +
+    geom_tile(size = 5)
+```
+
+
+
+
+
+
+
