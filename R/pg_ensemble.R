@@ -7,6 +7,7 @@
 #' @param space_id Spatial location ID vector (N) 
 #' @param coords Matrix of x y coordinates, with colnames(coords) == c("x", "y"), (N, 2)
 #' @param n_iter Number of iterations used in MCMC
+#' @param beta_prior_var Variance of normal prior placed on betas
 #'
 #' @return A list containing MCMC output 
 #'
@@ -15,7 +16,7 @@
 #' 
 #' 
 #' @export
-pg_ensemble <- function(dens, X, space_id, coords, n_iter) {
+pg_ensemble <- function(dens, X, space_id, coords, n_iter, beta_prior_var = 100) {
 
     model_names <- colnames(dens)
     dens <- t(dens)
@@ -41,8 +42,6 @@ pg_ensemble <- function(dens, X, space_id, coords, n_iter) {
 
     betas <- array(0, dim = c(M - 1, P, n_iter))
     betas[, , 1] <- 0
-    betas_mu <- 0
-    betas_sd <- 10
 
     #init gp params
     tau2 <- rep(0, n_iter)
@@ -121,7 +120,7 @@ pg_ensemble <- function(dens, X, space_id, coords, n_iter) {
 
         #update betas
         for (j in 1:(M - 1)) {
-            var_beta <- solve(t(X) %*% solve(covar) %*% X + diag(1 / betas_sd^2, P))
+            var_beta <- solve(t(X) %*% solve(covar) %*% X + diag(1 / beta_prior_var, P))
             mean_beta <- var_beta %*% (t(X) %*% solve(covar) %*% psi[j, , i])
             betas[j, , i] <- t(mvtnorm::rmvnorm(n = 1, mean = mean_beta, sigma = var_beta))
 
