@@ -2,3 +2,4 @@
 
 export(pg_ensemble)
 export(pg_pred)
+export(pg_weight_pred)

@@ -129,11 +129,6 @@ cmaq_cv <- ensembleDownscaleR::grm_cv(
 
 la_aqs$cmaqgrm_model_estimate <- cmaq_cv$estimate
 la_aqs$cmaqgrm_model_sd <- cmaq_cv$sd
-la_aqs$cmaqgrm_model_density <- dnorm(
-    la_aqs$pm25, 
-    mean = la_aqs$cmaqgrm_model_estimate, 
-    sd = la_aqs$cmaqgrm_model_sd
-)
 
 
 
@@ -158,11 +153,6 @@ modis_cv <- ensembleDownscaleR::grm_cv(
 
 la_aqs$modisgrm_model_estimate <- modis_cv$estimate
 la_aqs$modisgrm_model_sd <- modis_cv$sd
-la_aqs$modisgrm_model_density <- dnorm(
-    la_aqs$pm25, 
-    mean = la_aqs$modisgrm_model_estimate, 
-    sd = la_aqs$modisgrm_model_sd
-)
 
 
 
@@ -183,11 +173,6 @@ bart_fit_cv <- bart_cv(
 )
 la_aqs$bart_model_estimate <- bart_fit_cv$estimate
 la_aqs$bart_model_sd <- bart_fit_cv$sd
-la_aqs$bart_model_density <- dnorm(
-    la_aqs$pm25, 
-    mean = la_aqs$bart_model_estimate, 
-    sd = la_aqs$bart_model_sd
-)
 
 la_aqs <- la_aqs |>
     filter(!is.na(modisgrm_model_estimate),

@@ -1,25 +1,57 @@
 #' Fit spatial Bayesian ensemble
 #'
-#' This function fits a spatial Bayesian ensemble using model densities and (optional) ensemble weight covariates
+#' This function fits a spatial Bayesian ensemble using model predictive
+#' means and standard deviations, and (optional) ensemble weight covariates.
+#' Component densities are computed internally as N(y | model_est, model_sd^2).
 #'
-#' @param dens Matrix of model densities (N x M)
+#' @param y Vector of observations (N)
+#' @param model_est Matrix or data frame of model predictive means (N x M).
+#'   Column names, if provided, are used as model names; otherwise names
+#'   "model_1", ..., "model_M" are assigned.
+#' @param model_sd Matrix or data frame of model predictive standard
+#'   deviations (N x M). Columns are paired with model_est positionally
+#'   (column j of model_sd belongs to column j of model_est); its column
+#'   names, if any, are ignored.
 #' @param X Matrix of covariates (N x P)
-#' @param space_id Spatial location ID vector (N) 
+#' @param space_id Spatial location ID vector (N)
 #' @param coords Matrix of x y coordinates, with colnames(coords) == c("x", "y"), (N, 2)
 #' @param n_iter Number of iterations used in MCMC
 #' @param beta_prior_var Variance of normal prior placed on betas
+#' @param model_names Optional character vector of model names (length M),
+#'   applied positionally to the columns of model_est/model_sd and used to
+#'   name weight output columns (e.g. "cmaqgrm" yields "cmaqgrm_weight" in
+#'   pg_pred() output). Overrides colnames(model_est) if both are present.
+#'   If NULL, colnames(model_est) are used, or "model_1", ..., "model_M"
+#'   if model_est is unnamed.
 #'
-#' @return A list containing MCMC output 
+#' @return A list containing MCMC output
 #'
 #' @examples
 #' # pg_ensemble()
-#' 
-#' 
+#'
+#'
 #' @export
-pg_ensemble <- function(dens, X, space_id, coords, n_iter, beta_prior_var = 100) {
+pg_ensemble <- function(y, model_est, model_sd, X, space_id, coords, n_iter, beta_prior_var = 100, model_names = NULL) {
 
-    model_names <- colnames(dens)
-    dens <- t(dens)
+    if (!is.null(model_names)) {
+        model_est <- as.matrix(model_est)
+        if (length(model_names) != ncol(model_est)) {
+            stop("model_names must have one name per column of model_est.")
+        }
+        colnames(model_est) <- model_names
+    }
+    aligned <- align_est_sd(model_est, model_sd)
+    model_est <- aligned$model_est
+    model_sd <- aligned$model_sd
+    model_names <- aligned$model_names
+
+    if (nrow(model_est) != length(y) || length(space_id) != length(y)) {
+        stop("y, space_id, and the rows of model_est/model_sd must all have length N.")
+    }
+
+    dens <- stats::dnorm(y, mean = model_est, sd = model_sd) |>
+        matrix(nrow = length(y), ncol = ncol(model_est)) |>
+        t()
     locs <- cbind(space_id = space_id, coords) |>
         unique() |>
         as.data.frame()
@@ -202,3 +234,71 @@ pg_ensemble <- function(dens, X, space_id, coords, n_iter, beta_prior_var = 100)
     )
 }
 
+
+#' Validate and align model estimate and sd matrices (internal)
+#'
+#' Coerces model_est and model_sd to matrices, checks dimension agreement,
+#' and resolves model names. Columns of model_sd are paired with model_est
+#' positionally; column names on model_sd are ignored. If model_names is
+#' supplied (prediction time) and colnames(model_est) contain all of
+#' model_names, both matrices are permuted together to model_names order;
+#' if the names share nothing with model_names (e.g. raw data column
+#' names), columns are taken positionally; a partial overlap is an error.
+#'
+#' @param model_est Matrix or data frame of model predictive means (N x M)
+#' @param model_sd Matrix or data frame of model predictive sds (N x M)
+#' @param model_names Optional character vector of model names to align
+#'   columns to (used at prediction time). If NULL, names are taken from
+#'   colnames(model_est), or defaults "model_1", ..., "model_M" are assigned.
+#'
+#' @return A list with elements model_est, model_sd, and model_names, with
+#'   columns of both matrices in model_names order.
+#'
+#' @noRd
+align_est_sd <- function(model_est, model_sd, model_names = NULL) {
+    model_est <- as.matrix(model_est)
+    model_sd <- as.matrix(model_sd)
+
+    if (!identical(dim(model_est), dim(model_sd))) {
+        stop("model_est and model_sd must have identical dimensions.")
+    }
+
+    est_named <- !is.null(colnames(model_est))
+
+    if (est_named && anyDuplicated(colnames(model_est))) {
+        stop("model_est column names must be unique.")
+    }
+
+    if (is.null(model_names)) {
+        model_names <- if (est_named) {
+            colnames(model_est)
+        } else {
+            paste0("model_", seq_len(ncol(model_est)))
+        }
+    } else {
+        if (ncol(model_est) != length(model_names)) {
+            stop("model_est and model_sd must each have one column per model (",
+                 length(model_names), " models in pg_fit).")
+        }
+        if (est_named) {
+            n_matched <- sum(model_names %in% colnames(model_est))
+            if (n_matched == length(model_names)) {
+                # permute est and sd together to preserve positional pairing
+                perm <- match(model_names, colnames(model_est))
+                model_est <- model_est[, perm, drop = FALSE]
+                model_sd <- model_sd[, perm, drop = FALSE]
+            } else if (n_matched > 0) {
+                stop("colnames(model_est) partially match pg_fit$model_names. ",
+                     "Provide all matching names (any order) or non-matching ",
+                     "names/no names (columns then taken in pg_fit$model_names order).")
+            }
+            # n_matched == 0: raw column names (e.g. "*_model_estimate");
+            # columns are assumed to be in pg_fit$model_names order
+        }
+    }
+
+    colnames(model_est) <- model_names
+    colnames(model_sd) <- model_names
+
+    list(model_est = model_est, model_sd = model_sd, model_names = model_names)
+}

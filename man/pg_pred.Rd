@@ -2,27 +2,39 @@
 % Please edit documentation in R/pg_pred.R
 \name{pg_pred}
 \alias{pg_pred}
-\title{Fit the Geostatistical Regression Model (GRM)}
+\title{Ensemble predictions at new locations}
 \usage{
-pg_pred(pg_fit, X, space_id, coords)
+pg_pred(pg_fit, X, space_id, coords, model_est, model_sd)
 }
 \arguments{
 \item{pg_fit}{Ensemble fit object created with pg_ensemble()}
 
 \item{X}{Matrix of covariates (N_pred x P)}
 
-\item{space_id}{spatial location ID vector (N_pred)}
+\item{space_id}{Spatial location ID vector (N_pred)}
 
-\item{coords}{Matrix of prediction x y coordinates, with colnames(coords) == c("x", "y"), (N_pred, 2)}
+\item{coords}{Matrix of prediction x y coordinates, with
+colnames(coords) == c("x", "y"), (N_pred, 2)}
+
+\item{model_est}{Matrix or data frame of model predictive means
+(N_pred x M). If column names are provided they must match
+pg_fit$model_names (any order); otherwise columns are assumed to be
+in the same order as pg_fit$model_names.}
+
+\item{model_sd}{Matrix or data frame of model predictive standard
+deviations (N_pred x M), same column conventions as model_est.}
 }
 \value{
-A list containing MCMC output
+A data frame with one row per prediction row, containing
+space_id, x, y, the ensemble prediction (pred), the ensemble
+predictive sd (pred_sd), and the kriged weights used for each model.
 }
 \description{
-This function fits a spatial Bayesian ensemble using model densities and (optional) ensemble weight covariates
+Computes ensemble predictions by combining individual model
+predictive distributions with spatially-varying weights kriged from a
+fitted ensemble object.
 }
 \examples{
 # pg_pred()
-
 
 }
