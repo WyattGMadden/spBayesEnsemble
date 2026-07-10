@@ -15,6 +15,7 @@
 #' @param X Matrix of covariates (N x P)
 #' @param space_id Spatial location ID vector (N)
 #' @param coords Matrix of x y coordinates, with colnames(coords) == c("x", "y"), (N, 2)
+#' @param intercept Include shared (across member models) spatial intercept to means
 #' @param n_iter Number of iterations used in MCMC
 #' @param beta_prior_var Variance of normal prior placed on betas
 #' @param model_names Optional character vector of model names (length M),
@@ -31,7 +32,12 @@
 #'
 #'
 #' @export
-pg_ensemble <- function(y, model_est, model_sd, X, space_id, coords, n_iter, beta_prior_var = 100, model_names = NULL) {
+pg_ensemble <- function(
+    y, model_est, model_sd, X, space_id, coords, 
+    intercept = FALSE,
+    n_iter = 1000, 
+    beta_prior_var = 100, 
+    model_names = NULL) {
 
     if (!is.null(model_names)) {
         model_est <- as.matrix(model_est)
@@ -75,7 +81,7 @@ pg_ensemble <- function(y, model_est, model_sd, X, space_id, coords, n_iter, bet
     betas <- array(0, dim = c(M - 1, P, n_iter))
     betas[, , 1] <- 0
 
-    #init gp params
+    # init gp params
     tau2 <- rep(0, n_iter)
     tau2[1] <- 1
     tau2_a <- 0.001
@@ -87,8 +93,26 @@ pg_ensemble <- function(y, model_est, model_sd, X, space_id, coords, n_iter, bet
     rho_mu <- 3
     rho_sd <- 1
 
+    # init ensemble intercept
+    delta <- matrix(0, nrow = S, ncol = n_iter)
+    tau2_delta <- rep(0, n_iter)
+    tau2_delta[1] <- 1
+    tau2_delta_a <- 0.001
+    tau2_delta_b <- 0.001
+    rho_delta <- rep(20, n_iter)
+    rho_delta_step <- 2
+    rho_delta_mu <- 3
+    rho_delta_sd <- 1
+
     for (i in 2:n_iter) {
 
+        #recompute densities with current spatial intercept
+        if (intercept) {
+            delta_obs <- delta[space_id, i - 1]
+            dens <- stats::dnorm(y, mean = model_est + delta_obs, sd = model_sd) |>
+                matrix(nrow = length(y), ncol = ncol(model_est)) |>
+                t()
+        }
 
         #calculate Z
         obs_weights <- weights_all[, , i - 1][, space_id]
@@ -118,6 +142,50 @@ pg_ensemble <- function(y, model_est, model_sd, X, space_id, coords, n_iter, bet
             z_counts_rev_cum[, j] <- z_counts_rev_cum[, j + 1] + z_counts_rev_cum[, j]
         }
         z_counts_rev_cum <- z_counts_rev_cum[, 1:(ncol(z_counts_rev_cum) - 1)]
+
+         
+        #######################################
+        ######## spatial intercept (delta) ####
+        #######################################
+        if (intercept) {
+            #assigned-model residual and variance per observation
+            est_assigned <- colSums(z_draw * t(model_est))
+            var_assigned <- colSums(z_draw * t(model_sd^2))
+            resid <- y - est_assigned
+
+            b_s <- tapply(1 / var_assigned, space_id, sum)
+            e_s <- tapply(resid / var_assigned, space_id, sum)
+
+            C_delta_inv <- solve(tau2_delta[i - 1] * exp(-distmat / rho_delta[i - 1]))
+            V_delta <- solve(diag(as.numeric(b_s)) + C_delta_inv)
+            m_delta <- V_delta %*% as.numeric(e_s)
+            delta[, i] <- t(mvtnorm::rmvnorm(n = 1, mean = m_delta, sigma = V_delta))
+
+            #update tau2_delta
+            SSS_delta <- t(delta[, i]) %*% solve(exp(-distmat / rho_delta[i - 1])) %*% delta[, i]
+            SSS_delta <- SSS_delta / 2
+            tau2_delta[i] <- 1 / stats::rgamma(1, S / 2 + tau2_delta_a, SSS_delta + tau2_delta_b)
+
+            #update rho_delta (MH)
+            rho_delta_prop <- stats::rlnorm(1, log(rho_delta[i - 1]), rho_delta_step)
+            C_delta_curr <- tau2_delta[i] * exp(-distmat / rho_delta[i - 1])
+            C_delta_prop <- tau2_delta[i] * exp(-distmat / rho_delta_prop)
+            lik_curr_d <- mvtnorm::dmvnorm(delta[, i], rep(0, S), C_delta_curr, log = TRUE)
+            lik_prop_d <- mvtnorm::dmvnorm(delta[, i], rep(0, S), C_delta_prop, log = TRUE)
+
+            ratio_d <- lik_prop_d +
+                stats::dlnorm(rho_delta_prop, rho_delta_mu, rho_delta_sd, log = TRUE) +
+                log(rho_delta_prop) -
+                lik_curr_d -
+                stats::dlnorm(rho_delta[i - 1], rho_delta_mu, rho_delta_sd, log = TRUE) -
+                log(rho_delta[i - 1])
+
+            if (log(stats::runif(1)) < ratio_d) {
+                rho_delta[i] <- rho_delta_prop
+            } else {
+                rho_delta[i] <- rho_delta[i - 1]
+            }
+        }
 
 
         #######################################
@@ -226,6 +294,10 @@ pg_ensemble <- function(y, model_est, model_sd, X, space_id, coords, n_iter, bet
             betas = betas, 
             tau2 = tau2, 
             rho = rho,
+            intercept = intercept,
+            delta = delta,
+            tau2_delta = tau2_delta,
+            rho_delta = rho_delta,
             coords = coords,
             distmat = distmat,
             X = X,

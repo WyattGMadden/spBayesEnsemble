@@ -6,11 +6,8 @@
 <!-- badges: start -->
 
 [![R-CMD-check](https://github.com/WyattGMadden/spSpatialBayes/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/WyattGMadden/spSpatialBayes/actions/workflows/R-CMD-check.yaml)
-<!-- badges: end -->
-
-## Installation
-
-You can install the development version of **spBayesEnsemble** like so:
+<!-- badges: end --> \## Installation You can install the development
+version of **spBayesEnsemble** like so:
 
 ``` r
 remotes::install_github("WyattGMadden/spBayesEnsemble")
@@ -18,23 +15,38 @@ remotes::install_github("WyattGMadden/spBayesEnsemble")
 
 ``` r
 la_aqs
+la_grid
 ```
 
 ``` r
 X_elev <- unique(la_aqs[, c("space_id", "elevation")])
 X_elev <- X_elev[order(X_elev$space_id), ]
-
 pg_fit <- pg_ensemble(
-    dens = la_aqs[, c("cmaqgrm_model_density", 
-                      "modisgrm_model_density",
-                      "bart_model_density")],
+    y = la_aqs$pm25,
+    model_est = la_aqs[, c("cmaqgrm_model_estimate", 
+                           "modisgrm_model_estimate",
+                           "bart_model_estimate")],
+    model_sd = la_aqs[, c("cmaqgrm_model_sd", 
+                          "modisgrm_model_sd",
+                          "bart_model_sd")],
     X = cbind(rep(1, nrow(X_elev)),
               X_elev$elevation),
     space_id = la_aqs$space_id,
     coords = la_aqs[, c("x", "y")],
-    n_iter = 1000
+    intercept = TRUE,
+    n_iter = 1000,
+    model_names = c("cmaqgrm", "modisgrm", "bart")
 )
-            
+
+
+plot(pg_fit[['delta']][37,], type = "l")
+plot(pg_fit[['tau2_delta']], type = "l")
+plot(pg_fit[['rho_delta']], type = "l")
+plot(pg_fit[['psi']][1,], type = "l")
+
+plot(pg_fit[['psi']][1,3,], type = "l")
+plot(pg_fit[['psi']][2,10,], type = "l")
+plot(pg_fit[['psi']][1,30,], type = "l")
 ```
 
 ``` r
@@ -45,23 +57,24 @@ pred <- pg_pred(
     X = cbind(rep(1, nrow(X_elev_pred)),
               X_elev_pred$elevation),
     space_id = la_grid$space_id,
-    coords = la_grid[, c("x", "y")]
+    coords = la_grid[, c("x", "y")],
+    model_est = la_grid[, c("cmaqgrm_model_estimate", 
+                            "modisgrm_model_estimate",
+                            "bart_model_estimate")],
+    model_sd = la_grid[, c("cmaqgrm_model_sd", 
+                           "modisgrm_model_sd",
+                           "bart_model_sd")]
 )
-
-
 library(tidyverse)
 pred |>
-    ggplot(aes(x = x, y = y, color = cmaqgrm_model_density)) +
+    ggplot(aes(x = x, y = y, color = cmaqgrm_weight)) +
     geom_tile(size = 5)
-
 pred |>
-    ggplot(aes(x = x, y = y, color = modisgrm_model_density)) +
+    ggplot(aes(x = x, y = y, color = modisgrm_weight)) +
     geom_tile(size = 5)
-
 pred |>
-    ggplot(aes(x = x, y = y, color = bart_model_density)) +
+    ggplot(aes(x = x, y = y, color = bart_weight)) +
     geom_tile(size = 5)
-
 X_elev_pred |>
     ggplot(aes(x = x, y = y, color = elevation)) +
     geom_tile(size = 5)

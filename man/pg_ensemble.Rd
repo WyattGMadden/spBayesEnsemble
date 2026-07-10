@@ -4,10 +4,30 @@
 \alias{pg_ensemble}
 \title{Fit spatial Bayesian ensemble}
 \usage{
-pg_ensemble(dens, X, space_id, coords, n_iter, beta_prior_var = 100)
+pg_ensemble(
+  y,
+  model_est,
+  model_sd,
+  X,
+  space_id,
+  coords,
+  intercept = FALSE,
+  n_iter = 1000,
+  beta_prior_var = 100,
+  model_names = NULL
+)
 }
 \arguments{
-\item{dens}{Matrix of model densities (N x M)}
+\item{y}{Vector of observations (N)}
+
+\item{model_est}{Matrix or data frame of model predictive means (N x M).
+Column names, if provided, are used as model names; otherwise names
+"model_1", ..., "model_M" are assigned.}
+
+\item{model_sd}{Matrix or data frame of model predictive standard
+deviations (N x M). Columns are paired with model_est positionally
+(column j of model_sd belongs to column j of model_est); its column
+names, if any, are ignored.}
 
 \item{X}{Matrix of covariates (N x P)}
 
@@ -15,15 +35,26 @@ pg_ensemble(dens, X, space_id, coords, n_iter, beta_prior_var = 100)
 
 \item{coords}{Matrix of x y coordinates, with colnames(coords) == c("x", "y"), (N, 2)}
 
+\item{intercept}{Include shared (across member models) spatial intercept to means}
+
 \item{n_iter}{Number of iterations used in MCMC}
 
 \item{beta_prior_var}{Variance of normal prior placed on betas}
+
+\item{model_names}{Optional character vector of model names (length M),
+applied positionally to the columns of model_est/model_sd and used to
+name weight output columns (e.g. "cmaqgrm" yields "cmaqgrm_weight" in
+pg_pred() output). Overrides colnames(model_est) if both are present.
+If NULL, colnames(model_est) are used, or "model_1", ..., "model_M"
+if model_est is unnamed.}
 }
 \value{
 A list containing MCMC output
 }
 \description{
-This function fits a spatial Bayesian ensemble using model densities and (optional) ensemble weight covariates
+This function fits a spatial Bayesian ensemble using model predictive
+means and standard deviations, and (optional) ensemble weight covariates.
+Component densities are computed internally as N(y | model_est, model_sd^2).
 }
 \examples{
 # pg_ensemble()

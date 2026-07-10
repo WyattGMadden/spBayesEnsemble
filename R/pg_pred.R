@@ -44,6 +44,14 @@ pg_weight_pred <- function(pg_fit, X, space_id, coords) {
     n_iter <- dim(psi)[3]
     n_pred <- nrow(pred_locs)
 
+    intercept <- isTRUE(pg_fit$intercept)
+    if (intercept) {
+        delta <- pg_fit$delta
+        tau2_delta <- pg_fit$tau2_delta
+        rho_delta <- pg_fit$rho_delta
+        delta_pred_mat <- matrix(0, nrow = n_pred, ncol = n_iter)
+    }
+
     # accumulate posterior predictive mean of weights
     wsum <- matrix(0, nrow = M, ncol = n_pred)
 
@@ -51,6 +59,18 @@ pg_weight_pred <- function(pg_fit, X, space_id, coords) {
         sigma12 <- tau2[t] * exp(-distmat_obs_preds / rho[t])
         sigma22 <- tau2[t] * exp(-distmat_obs / rho[t])
         A <- sigma12 %*% solve(sigma22)
+
+        if (intercept) {
+            s12_d <- tau2_delta[t] * exp(-distmat_obs_preds / rho_delta[t])
+            s22_d <- tau2_delta[t] * exp(-distmat_obs / rho_delta[t])
+            A_delta <- s12_d %*% solve(s22_d)
+            # conditional mean (delta is zero-mean, no X beta add-back)
+            mu_delta <- as.vector(A_delta %*% delta[, t])
+            # conditional variance: diag(Sigma11 - A Sigma21)
+            var_delta <- tau2_delta[t] - rowSums(A_delta * s12_d)
+            var_delta <- pmax(var_delta, 0)
+            delta_pred_mat[, t] <- mu_delta + stats::rnorm(n_pred, 0, sqrt(var_delta))
+        }
 
         v_list <- vector("list", M - 1)
         w_list <- vector("list", M)
@@ -84,6 +104,11 @@ pg_weight_pred <- function(pg_fit, X, space_id, coords) {
     weights_pred$y <- pred_locs$y
     weights_pred$space_id <- pred_locs$space_id
 
+    if (intercept) {
+        weights_pred$delta <- rowMeans(delta_pred_mat)
+        weights_pred$delta_sd <- apply(delta_pred_mat, 1, stats::sd)
+    }
+
     return(weights_pred)
 }
 
@@ -113,7 +138,7 @@ pg_weight_pred <- function(pg_fit, X, space_id, coords) {
 #' @return A data frame with one row per prediction row, containing
 #'   space_id, x, y, the ensemble prediction (pred), the ensemble
 #'   predictive sd (pred_sd), and the kriged weight for each model in
-#'   columns named "{model_name}_weight".
+#'   columns named "\{model_name\}_weight".
 #'
 #' @examples
 #' # pg_pred()
@@ -138,6 +163,16 @@ pg_pred <- function(pg_fit, X, space_id, coords, model_est, model_sd) {
         coords = coords
     )
 
+    intercept <- isTRUE(pg_fit$intercept)
+    if (intercept) {
+        idx <- match(space_id, weights_pred$space_id)
+        delta_row <- weights_pred$delta[idx]
+        delta_sd_row <- weights_pred$delta_sd[idx]
+    } else {
+        delta_row <- 0
+        delta_sd_row <- 0
+    }
+
     # map location-level weights to prediction rows
     w <- as.matrix(
         weights_pred[match(space_id, weights_pred$space_id),
@@ -148,8 +183,9 @@ pg_pred <- function(pg_fit, X, space_id, coords, model_est, model_sd) {
     # mixture mean and variance:
     # E[y] = sum_k w_k mu_k
     # Var[y] = sum_k w_k (sd_k^2 + mu_k^2) - E[y]^2
-    pred_mean <- rowSums(w * model_est)
-    pred_var <- rowSums(w * (model_sd^2 + model_est^2)) - pred_mean^2
+    shifted_est <- model_est + delta_row
+    pred_mean <- rowSums(w * shifted_est)
+    pred_var <- rowSums(w * (model_sd^2 + shifted_est^2)) - pred_mean^2 + delta_sd_row^2
     pred_sd <- sqrt(pmax(pred_var, 0))
 
     out <- data.frame(

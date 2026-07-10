@@ -17,9 +17,9 @@ pg_weight_pred(pg_fit, X, space_id, coords)
 colnames(coords) == c("x", "y"), (N_pred, 2)}
 }
 \value{
-A data frame of posterior mean weights (one column per model),
-with x, y, and space_id columns appended. One row per unique
-prediction location.
+A data frame of posterior mean weights (one column per model,
+named by pg_fit$model_names), with x, y, and space_id columns
+appended. One row per unique prediction location.
 }
 \description{
 Kriges the latent stick-breaking GPs (psi) from a fitted ensemble object

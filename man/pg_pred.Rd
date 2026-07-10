@@ -17,17 +17,21 @@ pg_pred(pg_fit, X, space_id, coords, model_est, model_sd)
 colnames(coords) == c("x", "y"), (N_pred, 2)}
 
 \item{model_est}{Matrix or data frame of model predictive means
-(N_pred x M). If column names are provided they must match
-pg_fit$model_names (any order); otherwise columns are assumed to be
-in the same order as pg_fit$model_names.}
+(N_pred x M). If column names contain all of pg_fit$model_names,
+columns are matched by name (any order); otherwise (e.g. raw data
+column names, or no names) columns are assumed to be in the same
+order as pg_fit$model_names.}
 
 \item{model_sd}{Matrix or data frame of model predictive standard
-deviations (N_pred x M), same column conventions as model_est.}
+deviations (N_pred x M). Columns are paired with model_est
+positionally; its column names, if any, are ignored. Any reordering
+applied to model_est is applied to model_sd as well.}
 }
 \value{
 A data frame with one row per prediction row, containing
 space_id, x, y, the ensemble prediction (pred), the ensemble
-predictive sd (pred_sd), and the kriged weights used for each model.
+predictive sd (pred_sd), and the kriged weight for each model in
+columns named "\{model_name\}_weight".
 }
 \description{
 Computes ensemble predictions by combining individual model

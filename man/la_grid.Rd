@@ -27,13 +27,10 @@ A data frame with 72,000 rows and 15 columns:
 \item{y}{Location y-coordinate}
 \item{cmaqgrm_model_estimate}{PM2.5 estimate from CMAQ-GRM model.}
 \item{cmaqgrm_model_sd}{PM2.5 standard deviation from CMAQ-GRM model.}
-\item{cmaqgrm_model_density}{Normal density using estimate and sd from CMAQ-GRM model.}
 \item{modisgrm_model_estimate}{PM2.5 estimate from MODIS-GRM model.}
 \item{modisgrm_model_sd}{PM2.5 standard deviation from MODIS-GRM model.}
-\item{modisgrm_model_density}{Normal density using estimate and sd from MODIS-GRM model.}
 \item{bart_model_estimate}{PM2.5 estimate from BART model.}
 \item{bart_model_sd}{PM2.5 standard deviation from BART model.}
-\item{bart_model_density}{Normal density using estimate and sd from BART model.}
 ...
 }
 }
