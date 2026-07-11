@@ -4,7 +4,7 @@
 \alias{pg_pred}
 \title{Ensemble predictions at new locations}
 \usage{
-pg_pred(pg_fit, X, space_id, coords, model_est, model_sd)
+pg_pred(pg_fit, X, space_id, coords, model_est, model_sd, debug = FALSE)
 }
 \arguments{
 \item{pg_fit}{Ensemble fit object created with pg_ensemble()}
@@ -26,12 +26,17 @@ order as pg_fit$model_names.}
 deviations (N_pred x M). Columns are paired with model_est
 positionally; its column names, if any, are ignored. Any reordering
 applied to model_est is applied to model_sd as well.}
+
+\item{debug}{If TRUE, also return the intermediary kriged surfaces used
+internally: the stick-breaking logits (logit1, ..., logit(M-1)) and
+the spatial intercept (delta, delta_sd). Default FALSE.}
 }
 \value{
 A data frame with one row per prediction row, containing
 space_id, x, y, the ensemble prediction (pred), the ensemble
 predictive sd (pred_sd), and the kriged weight for each model in
-columns named "\{model_name\}_weight".
+columns named "\{model_name\}_weight". When debug = TRUE, additional
+columns delta, delta_sd, and logit1..logit(M-1).
 }
 \description{
 Computes ensemble predictions by combining individual model

@@ -4,7 +4,7 @@
 \alias{pg_weight_pred}
 \title{Predict spatially-varying ensemble weights at new locations}
 \usage{
-pg_weight_pred(pg_fit, X, space_id, coords)
+pg_weight_pred(pg_fit, X, space_id, coords, debug = FALSE)
 }
 \arguments{
 \item{pg_fit}{Ensemble fit object created with pg_ensemble()}
@@ -15,11 +15,18 @@ pg_weight_pred(pg_fit, X, space_id, coords)
 
 \item{coords}{Matrix of prediction x y coordinates, with
 colnames(coords) == c("x", "y"), (N_pred, 2)}
+
+\item{debug}{If TRUE, also return intermediary kriged surfaces: the
+stick-breaking logits (logit1, ..., logit(M-1)) and, when the fit
+used intercept = TRUE, the spatial intercept (delta, delta_sd).
+Default FALSE.}
 }
 \value{
 A data frame of posterior mean weights (one column per model,
 named by pg_fit$model_names), with x, y, and space_id columns
-appended. One row per unique prediction location.
+appended. One row per unique prediction location. When debug = TRUE,
+additional columns logit1..logit(M-1) (and delta, delta_sd for an
+intercept fit).
 }
 \description{
 Kriges the latent stick-breaking GPs (psi) from a fitted ensemble object

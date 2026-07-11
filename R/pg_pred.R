@@ -8,16 +8,22 @@
 #' @param space_id Spatial location ID vector (N_pred)
 #' @param coords Matrix of prediction x y coordinates, with
 #'   colnames(coords) == c("x", "y"), (N_pred, 2)
+#' @param debug If TRUE, also return intermediary kriged surfaces: the
+#'   stick-breaking logits (logit1, ..., logit(M-1)) and, when the fit
+#'   used intercept = TRUE, the spatial intercept (delta, delta_sd).
+#'   Default FALSE.
 #'
 #' @return A data frame of posterior mean weights (one column per model,
 #'   named by pg_fit$model_names), with x, y, and space_id columns
-#'   appended. One row per unique prediction location.
+#'   appended. One row per unique prediction location. When debug = TRUE,
+#'   additional columns logit1..logit(M-1) (and delta, delta_sd for an
+#'   intercept fit).
 #'
 #' @examples
 #' # pg_weight_pred()
 #'
 #' @export
-pg_weight_pred <- function(pg_fit, X, space_id, coords) {
+pg_weight_pred <- function(pg_fit, X, space_id, coords, debug = FALSE) {
     X_pred <- X
     X_obs <- pg_fit$X
     psi <- pg_fit$psi
@@ -54,6 +60,9 @@ pg_weight_pred <- function(pg_fit, X, space_id, coords) {
 
     # accumulate posterior predictive mean of weights
     wsum <- matrix(0, nrow = M, ncol = n_pred)
+    if (debug) {
+        logitsum <- matrix(0, nrow = M - 1, ncol = n_pred)
+    }
 
     for (t in 1:n_iter) {
         sigma12 <- tau2[t] * exp(-distmat_obs_preds / rho[t])
@@ -79,6 +88,9 @@ pg_weight_pred <- function(pg_fit, X, space_id, coords) {
             mu_j <- as.vector(X_pred %*% betas[j, , t]) +
                 A %*% (psi[j, , t] - as.vector(X_obs %*% betas[j, , t]))
             v_list[[j]] <- ilogit(mu_j)
+            if (debug) {
+                logitsum[j, ] <- logitsum[j, ] + as.vector(mu_j)
+            }
         }
 
         w_list[[1]] <- v_list[[1]]
@@ -109,6 +121,12 @@ pg_weight_pred <- function(pg_fit, X, space_id, coords) {
         weights_pred$delta_sd <- apply(delta_pred_mat, 1, stats::sd)
     }
 
+    if (debug) {
+        logitmean <- t(logitsum / n_iter)
+        colnames(logitmean) <- paste0("logit", seq_len(M - 1))
+        weights_pred <- cbind(weights_pred, as.data.frame(logitmean))
+    }
+
     return(weights_pred)
 }
 
@@ -134,17 +152,21 @@ pg_weight_pred <- function(pg_fit, X, space_id, coords) {
 #'   deviations (N_pred x M). Columns are paired with model_est
 #'   positionally; its column names, if any, are ignored. Any reordering
 #'   applied to model_est is applied to model_sd as well.
+#' @param debug If TRUE, also return the intermediary kriged surfaces used
+#'   internally: the stick-breaking logits (logit1, ..., logit(M-1)) and
+#'   the spatial intercept (delta, delta_sd). Default FALSE.
 #'
 #' @return A data frame with one row per prediction row, containing
 #'   space_id, x, y, the ensemble prediction (pred), the ensemble
 #'   predictive sd (pred_sd), and the kriged weight for each model in
-#'   columns named "\{model_name\}_weight".
+#'   columns named "\{model_name\}_weight". When debug = TRUE, additional
+#'   columns delta, delta_sd, and logit1..logit(M-1).
 #'
 #' @examples
 #' # pg_pred()
 #'
 #' @export
-pg_pred <- function(pg_fit, X, space_id, coords, model_est, model_sd) {
+pg_pred <- function(pg_fit, X, space_id, coords, model_est, model_sd, debug = FALSE) {
     model_names <- pg_fit$model_names
 
     aligned <- align_est_sd(model_est, model_sd, model_names = model_names)
@@ -160,12 +182,14 @@ pg_pred <- function(pg_fit, X, space_id, coords, model_est, model_sd) {
         pg_fit = pg_fit,
         X = X,
         space_id = space_id,
-        coords = coords
+        coords = coords,
+        debug = debug
     )
+
+    idx <- match(space_id, weights_pred$space_id)
 
     intercept <- isTRUE(pg_fit$intercept)
     if (intercept) {
-        idx <- match(space_id, weights_pred$space_id)
         delta_row <- weights_pred$delta[idx]
         delta_sd_row <- weights_pred$delta_sd[idx]
     } else {
@@ -175,7 +199,7 @@ pg_pred <- function(pg_fit, X, space_id, coords, model_est, model_sd) {
 
     # map location-level weights to prediction rows
     w <- as.matrix(
-        weights_pred[match(space_id, weights_pred$space_id),
+        weights_pred[idx,
                      model_names,
                      drop = FALSE]
     )
@@ -197,6 +221,15 @@ pg_pred <- function(pg_fit, X, space_id, coords, model_est, model_sd) {
     )
     colnames(w) <- paste0(model_names, "_weight")
     out <- cbind(out, as.data.frame(w))
+
+    if (debug) {
+        out$delta <- delta_row
+        out$delta_sd <- delta_sd_row
+        logit_cols <- grep("^logit[0-9]+$", names(weights_pred), value = TRUE)
+        for (lc in logit_cols) {
+            out[[lc]] <- weights_pred[[lc]][idx]
+        }
+    }
 
     return(out)
 }
