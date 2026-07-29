@@ -32,10 +32,7 @@ pg_weight_pred <- function(pg_fit, X, space_id, coords, debug = FALSE) {
     rho <- pg_fit$rho
 
     # unique observed locations (order must match pg_fit$distmat / psi columns)
-    locs <- pg_fit$coords |>
-        unique() |>
-        as.data.frame()
-    locs <- locs[order(locs$space_id), ]
+    locs <- pg_fit$locs
 
     pred_locs <- unique(cbind(space_id = space_id, coords)) |>
         as.data.frame()

@@ -299,7 +299,7 @@ pg_ensemble <- function(
             delta = delta,
             tau2_delta = tau2_delta,
             rho_delta = rho_delta,
-            coords = coords,
+            locs = locs,
             distmat = distmat,
             X = X,
             model_names = model_names
