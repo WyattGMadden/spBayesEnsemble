@@ -35,8 +35,12 @@ pg_weight_pred <- function(pg_fit, X, space_id, coords, debug = FALSE) {
     locs <- pg_fit$coords |>
         unique() |>
         as.data.frame()
+    locs <- locs[order(locs$space_id), ]
+
     pred_locs <- unique(cbind(space_id = space_id, coords)) |>
         as.data.frame()
+
+    pred_locs <- pred_locs[order(pred_locs$space_id), ]
 
     # distances: pred -> obs
     distmat_obs <- pg_fit$distmat

@@ -61,6 +61,7 @@ pg_ensemble <- function(
     locs <- cbind(space_id = space_id, coords) |>
         unique() |>
         as.data.frame()
+    locs <- locs[order(locs$space_id), ]
     distmat <- stats::dist(locs[, c("x", "y")]) |>
         as.matrix()
     P <- ncol(X)
