@@ -12,10 +12,22 @@
 #'   deviations (N x M). Columns are paired with model_est positionally
 #'   (column j of model_sd belongs to column j of model_est); its column
 #'   names, if any, are ignored.
-#' @param X Matrix of covariates (N x P)
-#' @param space_id Spatial location ID vector (N)
+#' @param X Matrix of covariates for the ensemble weight GP mean (S x P), one
+#'   row per unique spatial location, ordered by space_id
+#' @param space_id Spatial location ID vector (N). Must be integers
+#'   1, ..., S with no gaps.
 #' @param coords Matrix of x y coordinates, with colnames(coords) == c("x", "y"), (N, 2)
 #' @param intercept Include shared (across member models) spatial intercept to means
+#' @param nngp Use a nearest neighbor Gaussian process (NNGP) in place of a
+#'   full Gaussian process for the stick-breaking logits and, when requested,
+#'   the shared spatial intercept
+#' @param number_neighbors Number of nearest neighbors to use in the NNGP
+#' @param covariance Covariance function, one of "exponential", "matern",
+#'   "custom"
+#' @param covariance_kernel Custom covariance function, used when
+#'   covariance = "custom". Must be a function with "distance" and "theta"
+#'   arguments.
+#' @param matern_nu Nu parameter for the Matern covariance (0.5, 1.5, or 2.5)
 #' @param n_iter Number of iterations used in MCMC
 #' @param beta_prior_var Variance of normal prior placed on betas
 #' @param model_names Optional character vector of model names (length M),
@@ -24,6 +36,8 @@
 #'   pg_pred() output). Overrides colnames(model_est) if both are present.
 #'   If NULL, colnames(model_est) are used, or "model_1", ..., "model_M"
 #'   if model_est is unnamed.
+#' @param verbose Print MCMC progress
+#' @param verbose_iter Print progress every verbose_iter iterations
 #'
 #' @return A list containing MCMC output
 #'
@@ -35,9 +49,16 @@
 pg_ensemble <- function(
     y, model_est, model_sd, X, space_id, coords, 
     intercept = FALSE,
+    nngp = FALSE,
+    number_neighbors = 10,
+    covariance = "exponential",
+    covariance_kernel = NULL,
+    matern_nu = 1.5,
     n_iter = 1000, 
     beta_prior_var = 100, 
-    model_names = NULL) {
+    model_names = NULL,
+    verbose = TRUE,
+    verbose_iter = 100) {
 
     if (!is.null(model_names)) {
         model_est <- as.matrix(model_est)
@@ -55,6 +76,10 @@ pg_ensemble <- function(
         stop("y, space_id, and the rows of model_est/model_sd must all have length N.")
     }
 
+    cov_kern <- get_cov_kern(covariance = covariance,
+                             matern_nu = matern_nu,
+                             covariance_kernel = covariance_kernel)
+
     dens <- stats::dnorm(y, mean = model_est, sd = model_sd) |>
         matrix(nrow = length(y), ncol = ncol(model_est)) |>
         t()
@@ -62,12 +87,44 @@ pg_ensemble <- function(
         unique() |>
         as.data.frame()
     locs <- locs[order(locs$space_id), ]
-    distmat <- stats::dist(locs[, c("x", "y")]) |>
-        as.matrix()
+    X <- as.matrix(X)
     P <- ncol(X)
     S <- nrow(locs)
     M <- nrow(dens)
 
+    if (!all(sort(unique(space_id)) == seq_len(S))) {
+        stop("space_id must be integers 1, ..., S with no gaps.")
+    }
+    if (nrow(X) != S) {
+        stop("X must have one row per unique spatial location (S = ", S,
+             "), ordered by space_id.")
+    }
+
+    #######################################
+    ######## spatial structure ############
+    #######################################
+
+    distmat <- NULL
+    nngp_info <- NULL
+
+    if (nngp) {
+        if (verbose) {
+            cat("Setting up NNGP structures (m =", number_neighbors, "neighbors)\n")
+        }
+        nngp_info <- nngp_setup(coords = as.matrix(locs[, c("x", "y")]),
+                                space_id = locs$space_id,
+                                m = number_neighbors)
+        neighbors <- nngp_info$neighbors
+        neighbors_inverse <- nngp_info$neighbors_inverse
+        pos_in_neighbors <- nngp_info$pos_in_neighbors
+        dist_matrices <- nngp_info$dist_matrices
+        ord <- nngp_info$coord_ordering
+        rord <- nngp_info$coord_reverse_ordering
+        X_ord <- X[ord, , drop = FALSE]
+    } else {
+        distmat <- stats::dist(locs[, c("x", "y")]) |>
+            as.matrix()
+    }
 
     weights_all <- array(1, dim = c(M, S, n_iter))
 
@@ -142,7 +199,7 @@ pg_ensemble <- function(
         for (j in (ncol(z_counts) - 1):1) {
             z_counts_rev_cum[, j] <- z_counts_rev_cum[, j + 1] + z_counts_rev_cum[, j]
         }
-        z_counts_rev_cum <- z_counts_rev_cum[, 1:(ncol(z_counts_rev_cum) - 1)]
+        z_counts_rev_cum <- z_counts_rev_cum[, 1:(ncol(z_counts_rev_cum) - 1), drop = FALSE]
 
          
         #######################################
@@ -154,25 +211,72 @@ pg_ensemble <- function(
             var_assigned <- colSums(z_draw * t(model_sd^2))
             resid <- y - est_assigned
 
-            b_s <- tapply(1 / var_assigned, space_id, sum)
-            e_s <- tapply(resid / var_assigned, space_id, sum)
+            b_s <- as.numeric(tapply(1 / var_assigned, space_id, sum))
+            e_s <- as.numeric(tapply(resid / var_assigned, space_id, sum))
 
-            C_delta_inv <- solve(tau2_delta[i - 1] * exp(-distmat / rho_delta[i - 1]))
-            V_delta <- solve(diag(as.numeric(b_s)) + C_delta_inv)
-            m_delta <- V_delta %*% as.numeric(e_s)
-            delta[, i] <- t(mvtnorm::rmvnorm(n = 1, mean = m_delta, sigma = V_delta))
+            if (!nngp) {
+
+                K_delta <- cov_kern(distance = distmat, theta = rho_delta[i - 1])
+                K_delta_inv <- solve(K_delta)
+
+                V_delta <- solve(diag(b_s) + K_delta_inv / tau2_delta[i - 1])
+                m_delta <- V_delta %*% e_s
+                delta[, i] <- t(mvtnorm::rmvnorm(n = 1, mean = m_delta, sigma = V_delta))
+
+                #quadratic form under the unit kernel
+                SSS_delta <- t(delta[, i]) %*% K_delta_inv %*% delta[, i]
+
+            } else {
+
+                #unit-kernel B and F for the current range
+                BF_d <- get_nngp_B_and_F(dist_matrices = dist_matrices,
+                                         theta = rho_delta[i - 1],
+                                         cov_kern = cov_kern,
+                                         neighbors = neighbors,
+                                         tau = 1)
+
+                delta_ord <- mcmc_draw_delta_nngp(
+                    delta = delta[ord, i - 1],
+                    b_s = b_s[ord],
+                    e_s = e_s[ord],
+                    neighbors = neighbors,
+                    neighbors_inverse = neighbors_inverse,
+                    pos_in_neighbors = pos_in_neighbors,
+                    B_s = BF_d$B,
+                    F_s = tau2_delta[i - 1] * BF_d$F
+                    )
+                delta[, i] <- delta_ord[rord]
+
+                #quadratic form under the unit kernel
+                SSS_delta <- nngp_quadform(delta_ord, BF_d$B, BF_d$F, neighbors)
+            }
 
             #update tau2_delta
-            SSS_delta <- t(delta[, i]) %*% solve(exp(-distmat / rho_delta[i - 1])) %*% delta[, i]
             SSS_delta <- SSS_delta / 2
             tau2_delta[i] <- 1 / stats::rgamma(1, S / 2 + tau2_delta_a, SSS_delta + tau2_delta_b)
 
             #update rho_delta (MH)
             rho_delta_prop <- stats::rlnorm(1, log(rho_delta[i - 1]), rho_delta_step)
-            C_delta_curr <- tau2_delta[i] * exp(-distmat / rho_delta[i - 1])
-            C_delta_prop <- tau2_delta[i] * exp(-distmat / rho_delta_prop)
-            lik_curr_d <- mvtnorm::dmvnorm(delta[, i], rep(0, S), C_delta_curr, log = TRUE)
-            lik_prop_d <- mvtnorm::dmvnorm(delta[, i], rep(0, S), C_delta_prop, log = TRUE)
+            if (!nngp) {
+
+                C_delta_curr <- tau2_delta[i] * K_delta
+                C_delta_prop <- tau2_delta[i] * cov_kern(distance = distmat,
+                                                         theta = rho_delta_prop)
+                lik_curr_d <- mvtnorm::dmvnorm(delta[, i], rep(0, S), C_delta_curr, log = TRUE)
+                lik_prop_d <- mvtnorm::dmvnorm(delta[, i], rep(0, S), C_delta_prop, log = TRUE)
+
+            } else {
+
+                BF_d_prop <- get_nngp_B_and_F(dist_matrices = dist_matrices,
+                                              theta = rho_delta_prop,
+                                              cov_kern = cov_kern,
+                                              neighbors = neighbors,
+                                              tau = 1)
+                lik_curr_d <- nngp_loglik(delta_ord, BF_d$B, BF_d$F,
+                                          neighbors, tau = tau2_delta[i])
+                lik_prop_d <- nngp_loglik(delta_ord, BF_d_prop$B, BF_d_prop$F,
+                                          neighbors, tau = tau2_delta[i])
+            }
 
             ratio_d <- lik_prop_d +
                 stats::dlnorm(rho_delta_prop, rho_delta_mu, rho_delta_sd, log = TRUE) +
@@ -193,15 +297,25 @@ pg_ensemble <- function(
         ########weights sample##########
         #######################################
 
-        #calculate gp cov
-        covar <- tau2[i - 1] * exp(-1 / rho[i - 1] * distmat)
+        #calculate gp cov (unit kernel; tau2 applied where needed)
+        if (!nngp) {
+            K_unit <- cov_kern(distance = distmat, theta = rho[i - 1])
+            K_unit_inv <- solve(K_unit)
+            covar_inv <- K_unit_inv / tau2[i - 1]
+        } else {
+            BF <- get_nngp_B_and_F(dist_matrices = dist_matrices,
+                                   theta = rho[i - 1],
+                                   cov_kern = cov_kern,
+                                   neighbors = neighbors,
+                                   tau = 1)
+            F_scaled <- tau2[i - 1] * BF$F
+        }
 
         #draw pg variables
         pg_vars <- matrix(0, nrow = M - 1, ncol = S)
         for (j in 1:(M - 1)) {
-            pg_vars[j, ] <- BayesLogit::rpg.devroye(num = S,
-                                                    h = z_counts_rev_cum[, j],
-                                                    z = psi[j, , i - 1])
+            pg_vars[j, ] <- rpg_safe(h = z_counts_rev_cum[, j],
+                                     z = psi[j, , i - 1])
         }
         
         k_z <- matrix(0, nrow = M - 1, ncol = S)
@@ -212,45 +326,100 @@ pg_ensemble <- function(
 
         MMM <- matrix(0, nrow = M - 1, ncol = S)
         for (j in 1:(M - 1)) {
-            omega <- diag(pg_vars[j, ])
-            Sigma <- solve(omega + solve(covar))
-            MMM[j, ] <- Sigma %*% (k_z[j, ] + solve(covar) %*% (X %*% betas[j, , i - 1]))
-            psi[j, , i] <- t(mvtnorm::rmvnorm(n = 1, mean = MMM[j, ], sigma = Sigma))
+            mu_j <- as.numeric(X %*% betas[j, , i - 1])
+            if (!nngp) {
+                omega <- diag(pg_vars[j, ])
+                Sigma <- solve(omega + covar_inv)
+                MMM[j, ] <- Sigma %*% (k_z[j, ] + covar_inv %*% mu_j)
+                psi[j, , i] <- t(mvtnorm::rmvnorm(n = 1, mean = MMM[j, ], sigma = Sigma))
+            } else {
+                psi_ord <- mcmc_draw_psi_nngp(
+                    psi_k = psi[j, ord, i - 1],
+                    mu_k = mu_j[ord],
+                    kappa_k = k_z[j, ord],
+                    omega_k = pg_vars[j, ord],
+                    neighbors = neighbors,
+                    neighbors_inverse = neighbors_inverse,
+                    pos_in_neighbors = pos_in_neighbors,
+                    B_s = BF$B,
+                    F_s = F_scaled
+                    )
+                psi[j, , i] <- psi_ord[rord]
+            }
         }
 
 
         #update betas
+        #X' C^{-1} X does not depend on j, so form it once
+        if (!nngp) {
+            XtCinvX <- t(X) %*% covar_inv %*% X
+        } else {
+            Cinv_X <- apply(X_ord, 2, function(v) {
+                nngp_precision_multiply(v, BF$B, F_scaled, neighbors)
+            })
+            Cinv_X <- matrix(Cinv_X, nrow = S)
+            XtCinvX <- crossprod(X_ord, Cinv_X)
+        }
+        var_beta <- solve(XtCinvX + diag(1 / beta_prior_var, P))
+
         for (j in 1:(M - 1)) {
-            var_beta <- solve(t(X) %*% solve(covar) %*% X + diag(1 / beta_prior_var, P))
-            mean_beta <- var_beta %*% (t(X) %*% solve(covar) %*% psi[j, , i])
+            if (!nngp) {
+                XtCinv_psi <- t(X) %*% (covar_inv %*% psi[j, , i])
+            } else {
+                Cinv_psi <- nngp_precision_multiply(psi[j, ord, i], BF$B,
+                                                    F_scaled, neighbors)
+                XtCinv_psi <- crossprod(X_ord, Cinv_psi)
+            }
+            mean_beta <- var_beta %*% XtCinv_psi
             betas[j, , i] <- t(mvtnorm::rmvnorm(n = 1, mean = mean_beta, sigma = var_beta))
 
         }
+
+        
         #update tau
         SSS <- 0
         for (j in 1:(M - 1)) {
-            SSS_j <- t(psi[j, , i] - X %*% betas[j, , i]) %*% solve(exp(-distmat / rho[i - 1])) %*% (psi[j, , i] - X %*% betas[j, , i])
+            resid_j <- psi[j, , i] - as.numeric(X %*% betas[j, , i])
+            if (!nngp) {
+                SSS_j <- t(resid_j) %*% K_unit_inv %*% resid_j
+            } else {
+                SSS_j <- nngp_quadform(resid_j[ord], BF$B, BF$F, neighbors)
+            }
             SSS <- SSS + SSS_j
         }
         SSS <- SSS / 2
 
 
         tau2[i] <- 1 / stats::rgamma(1, (S * (M - 1)) / 2 + tau2_a, SSS + tau2_b)
-        covar <- tau2[i] * exp(-distmat / rho[i - 1])
-        #tau2_all[i] <- 1
 
         #update rho
         rho_prop <- stats::rlnorm(1, log(rho[i - 1]), rho_step)
-        SSS_curr <- covar
-        SSS_prop <- tau2[i] * exp(-distmat / rho_prop)
+
+        if (!nngp) {
+            SSS_curr <- tau2[i] * K_unit
+            SSS_prop <- tau2[i] * cov_kern(distance = distmat, theta = rho_prop)
+        } else {
+            BF_prop <- get_nngp_B_and_F(dist_matrices = dist_matrices,
+                                        theta = rho_prop,
+                                        cov_kern = cov_kern,
+                                        neighbors = neighbors,
+                                        tau = 1)
+        }
 
         lik_curr <- 0
         lik_prop <- 0
         for (j in 1:(M - 1)) {
-            lik_curr <- lik_curr + mvtnorm::dmvnorm(t(psi[j, , i]), X %*% betas[j, , i], SSS_curr, log = TRUE)
-            lik_prop <- lik_prop + mvtnorm::dmvnorm(t(psi[j, , i]), X %*% betas[j, , i], SSS_prop, log = TRUE)
+            resid_j <- psi[j, , i] - as.numeric(X %*% betas[j, , i])
+            if (!nngp) {
+                lik_curr <- lik_curr + mvtnorm::dmvnorm(resid_j, rep(0, S), SSS_curr, log = TRUE)
+                lik_prop <- lik_prop + mvtnorm::dmvnorm(resid_j, rep(0, S), SSS_prop, log = TRUE)
+            } else {
+                lik_curr <- lik_curr + nngp_loglik(resid_j[ord], BF$B, BF$F,
+                                                   neighbors, tau = tau2[i])
+                lik_prop <- lik_prop + nngp_loglik(resid_j[ord], BF_prop$B, BF_prop$F,
+                                                   neighbors, tau = tau2[i])
+            }
         }
-
 
 
         ratio <- lik_prop + 
@@ -269,7 +438,7 @@ pg_ensemble <- function(
         #update weights
 
         #inverse logit function
-        logit_psi <- ilogit(psi[, , i])
+        logit_psi <- matrix(ilogit(psi[, , i]), nrow = M - 1)
         for (j in 1:M) {
             if (j > 1) {
                 for (k in (1:(j - 1))) {
@@ -282,8 +451,8 @@ pg_ensemble <- function(
         }
 
 
-        if (i %% 100 == 0) {
-            print(i)
+        if (verbose && (i %% verbose_iter == 0)) {
+            cat(paste("     Iteration", i, "of", n_iter, "\n"))
         }
 
     }
@@ -302,7 +471,10 @@ pg_ensemble <- function(
             locs = locs,
             distmat = distmat,
             X = X,
-            model_names = model_names
+            model_names = model_names,
+            nngp = nngp,
+            nngp_info = nngp_info,
+            cov_kern = cov_kern
         )
     )
 }

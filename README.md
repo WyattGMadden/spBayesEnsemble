@@ -37,16 +37,6 @@ pg_fit <- pg_ensemble(
     n_iter = 1000,
     model_names = c("cmaqgrm", "modisgrm", "bart")
 )
-
-
-plot(pg_fit[['delta']][37,], type = "l")
-plot(pg_fit[['tau2_delta']], type = "l")
-plot(pg_fit[['rho_delta']], type = "l")
-plot(pg_fit[['psi']][1,], type = "l")
-
-plot(pg_fit[['psi']][1,3,], type = "l")
-plot(pg_fit[['psi']][2,10,], type = "l")
-plot(pg_fit[['psi']][1,30,], type = "l")
 ```
 
 ``` r
@@ -65,17 +55,4 @@ pred <- pg_pred(
                            "modisgrm_model_sd",
                            "bart_model_sd")]
 )
-library(tidyverse)
-pred |>
-    ggplot(aes(x = x, y = y, color = cmaqgrm_weight)) +
-    geom_tile(size = 5)
-pred |>
-    ggplot(aes(x = x, y = y, color = modisgrm_weight)) +
-    geom_tile(size = 5)
-pred |>
-    ggplot(aes(x = x, y = y, color = bart_weight)) +
-    geom_tile(size = 5)
-X_elev_pred |>
-    ggplot(aes(x = x, y = y, color = elevation)) +
-    geom_tile(size = 5)
 ```

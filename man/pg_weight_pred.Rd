@@ -9,28 +9,36 @@ pg_weight_pred(pg_fit, X, space_id, coords, debug = FALSE)
 \arguments{
 \item{pg_fit}{Ensemble fit object created with pg_ensemble()}
 
-\item{X}{Matrix of covariates (N_pred x P)}
+\item{X}{Matrix of covariates (S_pred x P), one row per unique prediction
+location, ordered by space_id}
 
 \item{space_id}{Spatial location ID vector (N_pred)}
 
 \item{coords}{Matrix of prediction x y coordinates, with
 colnames(coords) == c("x", "y"), (N_pred, 2)}
 
-\item{debug}{If TRUE, also return intermediary kriged surfaces: the
-stick-breaking logits (logit1, ..., logit(M-1)) and, when the fit
-used intercept = TRUE, the spatial intercept (delta, delta_sd).
-Default FALSE.}
+\item{debug}{If TRUE, also return draws of the kriged stick-breaking
+logits. Default FALSE.}
 }
 \value{
-A data frame of posterior mean weights (one column per model,
-named by pg_fit$model_names), with x, y, and space_id columns
-appended. One row per unique prediction location. When debug = TRUE,
-additional columns logit1..logit(M-1) (and delta, delta_sd for an
-intercept fit).
+A list with elements
+\describe{
+\item{weight_preds}{Array (n_iter x M x S_pred) of weight draws.}
+\item{locs}{Data frame of unique prediction locations (space_id, x, y),
+sorted by space_id, in the order of the third dimension of
+weight_preds.}
+\item{delta_pred}{Matrix (n_iter x S_pred) of spatial intercept draws.
+Present only when the fit used intercept = TRUE.}
+\item{logit_preds}{Array (n_iter x (M-1) x S_pred) of stick-breaking
+logit draws. Present only when debug = TRUE.}
+}
 }
 \description{
 Kriges the latent stick-breaking GPs (psi) from a fitted ensemble object
-to new locations and returns posterior mean ensemble weights.
+to new locations and returns posterior draws of the ensemble weights, one
+draw per stored MCMC iteration. For intercept fits, the shared spatial
+intercept (delta) is kriged from the same iteration, so weight and delta
+draws are aligned by iteration.
 }
 \examples{
 # pg_weight_pred()

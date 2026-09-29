@@ -9,7 +9,8 @@ pg_pred(pg_fit, X, space_id, coords, model_est, model_sd, debug = FALSE)
 \arguments{
 \item{pg_fit}{Ensemble fit object created with pg_ensemble()}
 
-\item{X}{Matrix of covariates (N_pred x P)}
+\item{X}{Matrix of covariates (S_pred x P), one row per unique prediction
+location, ordered by space_id}
 
 \item{space_id}{Spatial location ID vector (N_pred)}
 
@@ -28,15 +29,17 @@ positionally; its column names, if any, are ignored. Any reordering
 applied to model_est is applied to model_sd as well.}
 
 \item{debug}{If TRUE, also return the intermediary kriged surfaces used
-internally: the stick-breaking logits (logit1, ..., logit(M-1)) and
-the spatial intercept (delta, delta_sd). Default FALSE.}
+internally: the stick-breaking logits (logit1, ..., logit(M-1)) and,
+for an intercept fit, the spatial intercept (delta, delta_sd).
+Default FALSE.}
 }
 \value{
 A data frame with one row per prediction row, containing
 space_id, x, y, the ensemble prediction (pred), the ensemble
-predictive sd (pred_sd), and the kriged weight for each model in
-columns named "\{model_name\}_weight". When debug = TRUE, additional
-columns delta, delta_sd, and logit1..logit(M-1).
+predictive sd (pred_sd), and the posterior mean kriged weight for
+each model in columns named "\{model_name\}_weight". When
+debug = TRUE, additional columns logit1..logit(M-1), and delta,
+delta_sd for an intercept fit.
 }
 \description{
 Computes ensemble predictions by combining individual model

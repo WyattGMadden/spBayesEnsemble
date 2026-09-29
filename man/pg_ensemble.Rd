@@ -12,9 +12,16 @@ pg_ensemble(
   space_id,
   coords,
   intercept = FALSE,
+  nngp = FALSE,
+  number_neighbors = 10,
+  covariance = "exponential",
+  covariance_kernel = NULL,
+  matern_nu = 1.5,
   n_iter = 1000,
   beta_prior_var = 100,
-  model_names = NULL
+  model_names = NULL,
+  verbose = TRUE,
+  verbose_iter = 100
 )
 }
 \arguments{
@@ -29,13 +36,30 @@ deviations (N x M). Columns are paired with model_est positionally
 (column j of model_sd belongs to column j of model_est); its column
 names, if any, are ignored.}
 
-\item{X}{Matrix of covariates (N x P)}
+\item{X}{Matrix of covariates for the ensemble weight GP mean (S x P), one
+row per unique spatial location, ordered by space_id}
 
-\item{space_id}{Spatial location ID vector (N)}
+\item{space_id}{Spatial location ID vector (N). Must be integers
+1, ..., S with no gaps.}
 
 \item{coords}{Matrix of x y coordinates, with colnames(coords) == c("x", "y"), (N, 2)}
 
 \item{intercept}{Include shared (across member models) spatial intercept to means}
+
+\item{nngp}{Use a nearest neighbor Gaussian process (NNGP) in place of a
+full Gaussian process for the stick-breaking logits and, when requested,
+the shared spatial intercept}
+
+\item{number_neighbors}{Number of nearest neighbors to use in the NNGP}
+
+\item{covariance}{Covariance function, one of "exponential", "matern",
+"custom"}
+
+\item{covariance_kernel}{Custom covariance function, used when
+covariance = "custom". Must be a function with "distance" and "theta"
+arguments.}
+
+\item{matern_nu}{Nu parameter for the Matern covariance (0.5, 1.5, or 2.5)}
 
 \item{n_iter}{Number of iterations used in MCMC}
 
@@ -47,6 +71,10 @@ name weight output columns (e.g. "cmaqgrm" yields "cmaqgrm_weight" in
 pg_pred() output). Overrides colnames(model_est) if both are present.
 If NULL, colnames(model_est) are used, or "model_1", ..., "model_M"
 if model_est is unnamed.}
+
+\item{verbose}{Print MCMC progress}
+
+\item{verbose_iter}{Print progress every verbose_iter iterations}
 }
 \value{
 A list containing MCMC output
