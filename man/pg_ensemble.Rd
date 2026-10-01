@@ -18,6 +18,8 @@ pg_ensemble(
   covariance_kernel = NULL,
   matern_nu = 1.5,
   n_iter = 1000,
+  burn = 0,
+  thin = 1,
   beta_prior_var = 100,
   model_names = NULL,
   verbose = TRUE,
@@ -62,6 +64,10 @@ arguments.}
 \item{matern_nu}{Nu parameter for the Matern covariance (0.5, 1.5, or 2.5)}
 
 \item{n_iter}{Number of iterations used in MCMC}
+
+\item{burn}{Number of initial iterations discarded before saving}
+
+\item{thin}{Save every thin'th iteration after burn-in}
 
 \item{beta_prior_var}{Variance of normal prior placed on betas}
 

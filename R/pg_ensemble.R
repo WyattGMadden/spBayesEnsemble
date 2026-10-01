@@ -29,6 +29,8 @@
 #'   arguments.
 #' @param matern_nu Nu parameter for the Matern covariance (0.5, 1.5, or 2.5)
 #' @param n_iter Number of iterations used in MCMC
+#' @param burn Number of initial iterations discarded before saving
+#' @param thin Save every thin'th iteration after burn-in
 #' @param beta_prior_var Variance of normal prior placed on betas
 #' @param model_names Optional character vector of model names (length M),
 #'   applied positionally to the columns of model_est/model_sd and used to
@@ -55,6 +57,8 @@ pg_ensemble <- function(
     covariance_kernel = NULL,
     matern_nu = 1.5,
     n_iter = 1000, 
+    burn = 0,
+    thin = 1,
     beta_prior_var = 100, 
     model_names = NULL,
     verbose = TRUE,
@@ -99,6 +103,13 @@ pg_ensemble <- function(
         stop("X must have one row per unique spatial location (S = ", S,
              "), ordered by space_id.")
     }
+    if (burn < 0 || burn >= n_iter) {
+        stop("burn must be at least 0 and less than n_iter.")
+    }
+    if (thin < 1) {
+        stop("thin must be at least 1.")
+    }
+    keep <- seq(burn + 1, n_iter, by = thin)
 
     #######################################
     ######## spatial structure ############
@@ -459,22 +470,25 @@ pg_ensemble <- function(
 
     return(
         list(
-            weights_all = weights_all, 
-            psi = psi, 
-            betas = betas, 
-            tau2 = tau2, 
-            rho = rho,
+            weights_all = weights_all[, , keep, drop = FALSE], 
+            psi = psi[, , keep, drop = FALSE], 
+            betas = betas[, , keep, drop = FALSE], 
+            tau2 = tau2[keep], 
+            rho = rho[keep],
             intercept = intercept,
-            delta = delta,
-            tau2_delta = tau2_delta,
-            rho_delta = rho_delta,
+            delta = delta[, keep, drop = FALSE],
+            tau2_delta = tau2_delta[keep],
+            rho_delta = rho_delta[keep],
             locs = locs,
             distmat = distmat,
             X = X,
             model_names = model_names,
             nngp = nngp,
             nngp_info = nngp_info,
-            cov_kern = cov_kern
+            cov_kern = cov_kern,
+            n_iter = n_iter,
+            burn = burn,
+            thin = thin
         )
     )
 }
