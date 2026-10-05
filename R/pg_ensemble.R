@@ -139,13 +139,17 @@ pg_ensemble <- function(
 
     weights_all <- array(1, dim = c(M, S, n_iter))
 
-    #weights_all[, , 1] <- counts_by_spat[, c("weight1", "weight2", "weight3")] |>
-    #    as.matrix()
-    weights_all[, , 1] <- matrix(1/M, nrow = M, ncol = S)
+    #weights_all[, , 1] <- matrix(1/M, nrow = M, ncol = S)
 
     #psi1 <- matrix(0, nrow = S, ncol = n_iter)
     #psi2 <- matrix(0, nrow = S, ncol = n_iter)
     psi <- array(0, dim = c(M - 1, S, n_iter))
+
+    # initilize psi/weights at empirical probabilities
+    p <- prop.table(tabulate(max.col(t(dens)), nbins = M))
+    v <- p[-M] / (1 - c(0, cumsum(p)[seq_len(M - 2)]))
+    psi[, , 1] <- logit(v)
+    weights_all[, , 1] <- p
 
     betas <- array(0, dim = c(M - 1, P, n_iter))
     betas[, , 1] <- 0
