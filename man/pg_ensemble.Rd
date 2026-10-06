@@ -20,6 +20,7 @@ pg_ensemble(
   n_iter = 1000,
   burn = 0,
   thin = 1,
+  psi_init = NULL,
   beta_prior_var = 100,
   model_names = NULL,
   verbose = TRUE,
@@ -68,6 +69,10 @@ arguments.}
 \item{burn}{Number of initial iterations discarded before saving}
 
 \item{thin}{Save every thin'th iteration after burn-in}
+
+\item{psi_init}{Optional ((M-1) x S) matrix of initial stick-breaking
+logits. If NULL (default), psi is initialized at the global empirical
+member shares implied by the component densities.}
 
 \item{beta_prior_var}{Variance of normal prior placed on betas}
 

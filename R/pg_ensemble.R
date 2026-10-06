@@ -31,6 +31,9 @@
 #' @param n_iter Number of iterations used in MCMC
 #' @param burn Number of initial iterations discarded before saving
 #' @param thin Save every thin'th iteration after burn-in
+#' @param psi_init Optional ((M-1) x S) matrix of initial stick-breaking
+#'   logits. If NULL (default), psi is initialized at the global empirical
+#'   member shares implied by the component densities.
 #' @param beta_prior_var Variance of normal prior placed on betas
 #' @param model_names Optional character vector of model names (length M),
 #'   applied positionally to the columns of model_est/model_sd and used to
@@ -59,6 +62,7 @@ pg_ensemble <- function(
     n_iter = 1000, 
     burn = 0,
     thin = 1,
+    psi_init = NULL,
     beta_prior_var = 100, 
     model_names = NULL,
     verbose = TRUE,
@@ -145,11 +149,30 @@ pg_ensemble <- function(
     #psi2 <- matrix(0, nrow = S, ncol = n_iter)
     psi <- array(0, dim = c(M - 1, S, n_iter))
 
-    # initilize psi/weights at empirical probabilities
-    p <- prop.table(tabulate(max.col(t(dens)), nbins = M))
-    v <- p[-M] / (1 - c(0, cumsum(p)[seq_len(M - 2)]))
-    psi[, , 1] <- logit(v)
-    weights_all[, , 1] <- p
+    # initialize psi/weights at empirical probabilities, or at psi_init
+    if (is.null(psi_init)) {
+        p <- prop.table(tabulate(max.col(t(dens)), nbins = M))
+        v <- p[-M] / (1 - c(0, cumsum(p)[seq_len(M - 2)]))
+        psi[, , 1] <- logit(v)
+    } else {
+        psi_init <- matrix(as.numeric(psi_init), nrow = M - 1)
+        if (ncol(psi_init) != S) {
+            stop("psi_init must have M - 1 rows and S columns.")
+        }
+        psi[, , 1] <- psi_init
+    }
+
+    lp1 <- matrix(ilogit(psi[, , 1]), nrow = M - 1)
+    for (j in 1:M) {
+        if (j > 1) {
+            for (k in 1:(j - 1)) {
+                weights_all[j, , 1] <- weights_all[j, , 1] * (1 - lp1[k, ])
+            }
+        }
+        if (j < M) {
+            weights_all[j, , 1] <- weights_all[j, , 1] * lp1[j, ]
+        }
+    }
 
     betas <- array(0, dim = c(M - 1, P, n_iter))
     betas[, , 1] <- 0
